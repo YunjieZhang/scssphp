@@ -125,20 +125,21 @@ class Compiler
     protected $rootEnv;
     protected $rootBlock;
 
+    protected $env;
+    protected $scope;
+    protected $storeEnv;
+    protected $charsetSeen;
+    protected $sourceNames;
+
     private $indentLevel;
     private $commentsSeen;
     private $extends;
     private $extendsMap;
     private $parsedFiles;
-    private $env;
-    private $scope;
     private $parser;
-    private $sourceNames;
     private $sourceIndex;
     private $sourceLine;
     private $sourceColumn;
-    private $storeEnv;
-    private $charsetSeen;
     private $stderr;
     private $shouldEvaluate;
     private $ignoreErrors;
@@ -207,7 +208,7 @@ class Compiler
      *
      * @return \Leafo\ScssPhp\Parser
      */
-    private function parserFactory($path)
+    protected function parserFactory($path)
     {
         $parser = new Parser($path, count($this->sourceNames), $this->encoding);
 
@@ -1460,9 +1461,9 @@ class Compiler
                 list(, $name, $value) = $child;
 
                 if ($name[0] === Type::T_VARIABLE) {
-                    $flag = isset($child[3]) ? $child[3] : null;
-                    $isDefault = $flag === '!default';
-                    $isGlobal = $flag === '!global';
+                    $flags = isset($child[3]) ? $child[3] : [];
+                    $isDefault = in_array('!default', $flags);
+                    $isGlobal = in_array('!global', $flags);
 
                     if ($isGlobal) {
                         $this->set($name[1], $this->reduce($value), false, $this->rootEnv);
@@ -1742,7 +1743,7 @@ class Compiler
 
                 $line = $this->sourceLine;
                 $value = $this->compileValue($this->reduce($value, true));
-                echo "Line $line WARN: $value\n";
+                fwrite($this->stderr, "Line $line WARN: $value\n");
                 break;
 
             case Type::T_ERROR:
@@ -2216,7 +2217,7 @@ class Compiler
             return;
         }
 
-        if ($left !== self::$false) {
+        if ($left !== self::$false and $left !== self::$null) {
             return $this->reduce($right, true);
         }
 
@@ -2238,7 +2239,7 @@ class Compiler
             return;
         }
 
-        if ($left !== self::$false) {
+        if ($left !== self::$false and $left !== self::$null) {
             return $left;
         }
 
@@ -2944,7 +2945,6 @@ class Compiler
         }
 
         $hasNamespace = $name[0] === '^' || $name[0] === '@' || $name[0] === '%';
-
         for (;;) {
             if (array_key_exists($name, $env->store)) {
                 return $env->store[$name];
@@ -3303,7 +3303,7 @@ class Compiler
      *
      * @throws \Exception
      */
-    private function handleImportLoop($name)
+    protected function handleImportLoop($name)
     {
         for ($env = $this->env; $env; $env = $env->parent) {
             $file = $this->sourceNames[$env->block->sourceIndex];
